@@ -8,7 +8,7 @@ Redis 的过期策略都有哪些？内存淘汰机制都有哪些？手写一�
 
 常见的有两个问题：
 
-- 往 Redis 写入的数据怎么没了？
+-   往 Redis 写入的数据怎么没了？
 
 可能有同学会遇到，在生产环境的 Redis 经常会丢掉一些数据，写进去了，过一会儿可能就没了。我的天，同学，你问这个问题就说明 Redis 你就没用对啊。Redis 是缓存，你给当存储了是吧？
 
@@ -16,7 +16,7 @@ Redis 的过期策略都有哪些？内存淘汰机制都有哪些？手写一�
 
 那既然内存是有限的，比如 Redis 就只能用 10G，你要是往里面写了 20G 的数据，会咋办？当然会干掉 10G 的数据，然后就保留 10G 的数据了。那干掉哪些数据？保留哪些数据？当然是干掉不常用的数据，保留常用的数据了。
 
-- 数据明明过期了，怎么还占用着内存？
+-   数据明明过期了，怎么还占用着内存？
 
 这是由 Redis 的过期策略来决定。
 
@@ -42,42 +42,53 @@ Redis 过期策略是：**定期删除+惰性删除**。
 
 Redis 内存淘汰机制有以下几个：
 
-- noeviction: 当内存不足以容纳新写入数据时，新写入操作会报错，这个一般没人用吧，实在是太恶心了。
-- **allkeys-lru**：当内存不足以容纳新写入数据时，在**键空间**中，移除最近最少使用的 key（这个是**最常用**的）。
-- allkeys-random：当内存不足以容纳新写入数据时，在**键空间**中，随机移除某个 key，这个一般没人用吧，为啥要随机，肯定是把最近最少使用的 key 给干掉啊。
-- volatile-lru：当内存不足以容纳新写入数据时，在**设置了过期时间的键空间**中，移除最近最少使用的 key（这个一般不太合适）。
-- volatile-random：当内存不足以容纳新写入数据时，在**设置了过期时间的键空间**中，**随机移除**某个 key。
-- volatile-ttl：当内存不足以容纳新写入数据时，在**设置了过期时间的键空间**中，有**更早过期时间**的 key 优先移除。
+-   noeviction: 当内存不足以容纳新写入数据时，新写入操作会报错，这个一般没人用吧，实在是太恶心了。
+-   **allkeys-lru**：当内存不足以容纳新写入数据时，在**键空间**中，移除最近最少使用的 key（这个是**最常用**的）。
+-   allkeys-random：当内存不足以容纳新写入数据时，在**键空间**中，随机移除某个 key，这个一般没人用吧，为啥要随机，肯定是把最近最少使用的 key 给干掉啊。
+-   volatile-lru：当内存不足以容纳新写入数据时，在**设置了过期时间的键空间**中，移除最近最少使用的 key（这个一般不太合适）。
+-   volatile-random：当内存不足以容纳新写入数据时，在**设置了过期时间的键空间**中，**随机移除**某个 key。
+-   volatile-ttl：当内存不足以容纳新写入数据时，在**设置了过期时间的键空间**中，有**更早过期时间**的 key 优先移除。
 
 ### 手写一个 LRU 算法
+
+LRU 就是 Least Recently Used 的缩写，翻译过来就是“最近最少使用”。也就是说 LRU 算法会将最近最少用的缓存移除，让给最新使用的缓存。而往往最常读取的，也就是读取次数最多的，所以利用好 LRU 算法，我们能够提供对热点数据的缓存效率，能够提高缓存服务的内存使用率。
+
+那么如何实现呢？
+
+其实，实现的思路非常简单，就像下面这张图种描述的一样。
+
+![](./images/lru.png)
 
 你可以现场手写最原始的 LRU 算法，那个代码量太大了，似乎不太现实。
 
 不求自己纯手工从底层开始打造出自己的 LRU，但是起码要知道如何利用已有的 JDK 数据结构实现一个 Java 版的 LRU。
 
+![](./images/lru-cache.png)
+
 ```java
-class LRUCache<K, V> extends LinkedHashMap<K, V> {
-    private final int CACHE_SIZE;
+public class LRUCache<K, V> extends LinkedHashMap<K, V> {
+    private int capacity;
 
     /**
      * 传递进来最多能缓存多少数据
      *
-     * @param cacheSize 缓存大小
+     * @param capacity 缓存大小
      */
-    public LRUCache(int cacheSize) {
-        // true 表示让 linkedHashMap 按照访问顺序来进行排序，最近访问的放在头部，最老访问的放在尾部。
-        super((int) Math.ceil(cacheSize / 0.75) + 1, 0.75f, true);
-        CACHE_SIZE = cacheSize;
+    public LRUCache(int capacity) {
+        super(capacity, 0.75f, true);
+        this.capacity = capacity;
     }
 
     /**
-     * 钩子方法，通过put新增键值对的时候，若该方法返回true
-     * 便移除该map中最老的键和值
+     * 如果map中的数据量大于设定的最大容量，返回true，再新加入对象时删除最老的数据
+     *
+     * @param eldest 最老的数据项
+     * @return true则移除最老的数据
      */
     @Override
     protected boolean removeEldestEntry(Map.Entry<K, V> eldest) {
-        // 当 map中的数据量大于指定的缓存个数的时候，就自动删除最老的数据。
-        return size() > CACHE_SIZE;
+        // 当 map中的数据量大于指定的缓存个数的时候，自动移除最老的数据
+        return size() > capacity;
     }
 }
 ```

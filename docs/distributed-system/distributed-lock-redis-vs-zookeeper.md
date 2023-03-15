@@ -14,17 +14,17 @@
 
 这个分布式锁有 3 个重要的考量点：
 
-- 互斥（只能有一个客户端获取锁）
-- 不能死锁
-- 容错（只要大部分 Redis 节点创建了这把锁就可以）
+-   互斥（只能有一个客户端获取锁）
+-   不能死锁
+-   容错（只要大部分 Redis 节点创建了这把锁就可以）
 
 #### Redis 最普通的分布式锁
 
 第一个最普通的实现方式，就是在 Redis 里使用 `SET key value [EX seconds] [PX milliseconds] NX` 创建一个 key，这样就算加锁。其中：
 
-- `NX`：表示只有 `key` 不存在的时候才会设置成功，如果此时 redis 中存在这个 `key`，那么设置失败，返回 `nil`。
-- `EX seconds`：设置 `key` 的过期时间，精确到秒级。意思是 `seconds` 秒后锁自动释放，别人创建的时候如果发现已经有了就不能加锁了。
-- `PX milliseconds`：同样是设置 `key` 的过期时间，精确到毫秒级。
+-   `NX`：表示只有 `key` 不存在的时候才会设置成功，如果此时 redis 中存在这个 `key`，那么设置失败，返回 `nil`。
+-   `EX seconds`：设置 `key` 的过期时间，精确到秒级。意思是 `seconds` 秒后锁自动释放，别人创建的时候如果发现已经有了就不能加锁了。
+-   `PX milliseconds`：同样是设置 `key` 的过期时间，精确到毫秒级。
 
 比如执行以下命令：
 
@@ -52,7 +52,7 @@ end
 这个场景是假设有一个 Redis cluster，有 5 个 Redis master 实例。然后执行如下步骤获取一把锁：
 
 1. 获取当前时间戳，单位是毫秒；
-2. 跟上面类似，轮流尝试在每个 master 节点上创建锁，过期时间较短，一般就几十毫秒；
+2. 跟上面类似，轮流尝试在每个 master 节点上创建锁，超时时间较短，一般就几十毫秒（客户端为了获取锁而使用的超时时间比自动释放锁的总时间要小。例如，如果自动释放时间是 10 秒，那么超时时间可能在 `5~50` 毫秒范围内）；
 3. 尝试在**大多数节点**上建立一个锁，比如 5 个节点就要求是 3 个节点 `n / 2 + 1` ；
 4. 客户端计算建立好锁的时间，如果建立锁的时间小于超时时间，就算建立成功了；
 5. 要是锁建立失败了，那么就依次之前建立过的锁删除；
@@ -253,32 +253,32 @@ public class ZooKeeperDistributedLock implements Watcher {
 
     public boolean tryLock() {
         try {
- 		    // 传入进去的locksRoot + “/” + productId
-		    // 假设productId代表了一个商品id，比如说1
-		    // locksRoot = locks
-		    // /locks/10000000000，/locks/10000000001，/locks/10000000002
+            // 传入进去的locksRoot + “/” + productId
+            // 假设productId代表了一个商品id，比如说1
+            // locksRoot = locks
+            // /locks/10000000000，/locks/10000000001，/locks/10000000002
             lockNode = zk.create(locksRoot + "/" + productId, new byte[0], ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL_SEQUENTIAL);
 
             // 看看刚创建的节点是不是最小的节点
-	 	    // locks：10000000000，10000000001，10000000002
+            // locks：10000000000，10000000001，10000000002
             List<String> locks = zk.getChildren(locksRoot, false);
             Collections.sort(locks);
 
-            if(lockNode.equals(locksRoot+"/"+ locks.get(0))){
-                //如果是最小的节点,则表示取得锁
+            if (lockNode.equals(locksRoot + "/" + locks.get(0))) {
+                // 如果是最小的节点,则表示取得锁
                 return true;
             }
 
-            //如果不是最小的节点，找到比自己小1的节点
-	  int previousLockIndex = -1;
-            for(int i = 0; i < locks.size(); i++) {
-		if(lockNode.equals(locksRoot + “/” + locks.get(i))) {
-	         	    previousLockIndex = i - 1;
-		    break;
-		}
-	   }
+            // 如果不是最小的节点，找到比自己小1的节点
+            int previousLockIndex = -1;
+            for (int i = 0; i < locks.size(); i++) {
+                if (lockNode.equals(locksRoot + "/" +locks.get(i))){
+                    previousLockIndex = i - 1;
+                    break;
+                }
+            }
 
-	   this.waitNode = locks.get(previousLockIndex);
+            this.waitNode = locks.get(previousLockIndex);
         } catch (KeeperException e) {
             throw new LockException(e);
         } catch (InterruptedException e) {
@@ -326,10 +326,14 @@ public class ZooKeeperDistributedLock implements Watcher {
 }
 ```
 
+但是，使用 zk 临时节点会存在另一个问题：由于 zk 依靠 session 定期的心跳来维持客户端，如果客户端进入长时间的 GC，可能会导致 zk 认为客户端宕机而释放锁，让其他的客户端获取锁，但是客户端在 GC 恢复后，会认为自己还持有锁，从而可能出现多个客户端同时获取到锁的情形。[#209](https://github.com/doocs/advanced-java/issues/209)
+
+针对这种情况，可以通过 JVM 调优，尽量避免长时间 GC 的情况发生。
+
 ### redis 分布式锁和 zk 分布式锁的对比
 
-- redis 分布式锁，其实**需要自己不断去尝试获取锁**，比较消耗性能。
-- zk 分布式锁，获取不到锁，注册个监听器即可，不需要不断主动尝试获取锁，性能开销较小。
+-   redis 分布式锁，其实**需要自己不断去尝试获取锁**，比较消耗性能。
+-   zk 分布式锁，获取不到锁，注册个监听器即可，不需要不断主动尝试获取锁，性能开销较小。
 
 另外一点就是，如果是 Redis 获取锁的那个客户端 出现 bug 挂了，那么只能等待超时时间之后才能释放锁；而 zk 的话，因为创建的是临时 znode，只要客户端挂了，znode 就没了，此时就自动释放锁。
 

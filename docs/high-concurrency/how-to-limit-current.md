@@ -1,8 +1,5 @@
 # 如何限流？在工作中是怎么做的？说一下具体的实现？
 
-- Author: [HuiFer](https://github.com/huifer)
-- Description: 该文简单介绍限流相关技术以及实现
-
 ## 什么是限流
 
 > 限流可以认为服务降级的一种，限流就是限制系统的输入和输出流量已达到保护系统的目的。一般来说系统的吞吐量是可以被测算的，为了保证系统的稳定运行，一旦达到的需要限制的阈值，就需要限制流量并采取一些措施以完成限制流量的目的。比如：延迟处理，拒绝处理，或者部分拒绝处理等等。
@@ -13,7 +10,7 @@
 
 #### 实现方式
 
-- 控制单位时间内的请求数量
+控制单位时间内的请求数量。
 
 ```java
 
@@ -54,16 +51,17 @@ public class Counter {
 
 ```
 
-- 劣势
-  - 假设在 00:01 时发生一个请求,在 00:01-00:58 之间不在发送请求,在 00:59 时发送剩下的所有请求 `n-1` (n 为限流请求数量),在下一分钟的 00:01 发送 n 个请求,这样在 2 秒钟内请求到达了 `2n - 1` 个.
-    - 设每分钟请求数量为 60 个,每秒可以处理 1 个请求,用户在 00:59 发送 60 个请求,在 01:00 发送 60 个请求 此时 2 秒钟有 120 个请求(每秒 60 个请求),远远大于了每秒钟处理数量的阈值
+劣势：
+
+假设在 00:01 时发生一个请求，在 00:01-00:58 之间不在发送请求，在 00:59 时发送剩下的所有请求 `n-1` (n 为限流请求数量)，在下一分钟的 00:01 发送 n 个请求，这样在 2 秒钟内请求到达了 `2n - 1` 个。
+
+设每分钟请求数量为 60 个，每秒可以处理 1 个请求，用户在 00:59 发送 60 个请求，在 01:00 发送 60 个请求 此时 2 秒钟有 120 个请求(每秒 60 个请求)，远远大于了每秒钟处理数量的阈值。
 
 ### 滑动窗口
 
 #### 实现方式
 
-- 滑动窗口是对计数器方式的改进, 增加一个时间粒度的度量单位
-  - 把一分钟分成若干等分(6 份,每份 10 秒), 在每一份上设置独立计数器,在 00:00-00:09 之间发生请求计数器累加 1.当等分数量越大限流统计就越详细
+滑动窗口是对计数器方式的改进，增加一个时间粒度的度量单位，把一分钟分成若干等分(6 份，每份 10 秒)，在每一份上设置独立计数器，在 00:00-00:09 之间发生请求计数器累加 1。当等分数量越大限流统计就越详细。
 
 ```java
 package com.example.demo1.service;
@@ -86,7 +84,7 @@ public class TimeWindow {
      */
     private int max;
 
-    public TimeWindow(int max, int seconds) {
+    public TimeWindow(int max， int seconds) {
         this.seconds = seconds;
         this.max = max;
 
@@ -109,10 +107,10 @@ public class TimeWindow {
 
     public static void main(String[] args) throws Exception {
 
-        final TimeWindow timeWindow = new TimeWindow(10, 1);
+        final TimeWindow timeWindow = new TimeWindow(10， 1);
 
         // 测试3个线程
-        IntStream.range(0, 3).forEach((i) -> {
+        IntStream.range(0， 3).forEach((i) -> {
             new Thread(() -> {
 
                 while (true) {
@@ -193,7 +191,7 @@ public class TimeWindow {
 
 #### 实现方式
 
-- 规定固定容量的桶, 有水进入, 有水流出. 对于流进的水我们无法估计进来的数量、速度, 对于流出的水我们可以控制速度.
+规定固定容量的桶，有水进入，有水流出。对于流进的水我们无法估计进来的数量、速度，对于流出的水我们可以控制速度。
 
 ```java
 public class LeakBucket {
@@ -216,7 +214,7 @@ public class LeakBucket {
 
     public boolean limit() {
         long now = System.currentTimeMillis();
-        nowSize = Math.max(0, (nowSize - (now - time) * rate));
+        nowSize = Math.max(0， (nowSize - (now - time) * rate));
         time = now;
         if ((nowSize + 1) < total) {
             nowSize++;
@@ -233,7 +231,7 @@ public class LeakBucket {
 
 #### 实现方式
 
-- 规定固定容量的桶, token 以固定速度往桶内填充, 当桶满时 token 不会被继续放入, 每过来一个请求把 token 从桶中移除, 如果桶中没有 token 不能请求
+规定固定容量的桶， token 以固定速度往桶内填充， 当桶满时 token 不会被继续放入， 每过来一个请求把 token 从桶中移除， 如果桶中没有 token 不能请求。
 
 ```java
 public class TokenBucket {
@@ -256,7 +254,7 @@ public class TokenBucket {
 
     public boolean limit() {
         long now = System.currentTimeMillis();
-        nowSize = Math.min(total, nowSize + (now - time) * rate);
+        nowSize = Math.min(total， nowSize + (now - time) * rate);
         time = now;
         if (nowSize < 1) {
             // 桶里没有token
@@ -275,7 +273,7 @@ public class TokenBucket {
 
 ### spring cloud gateway
 
-- spring cloud gateway 默认使用 redis 进行限流, 笔者一般只是修改修改参数属于拿来即用. 并没有去从头实现上述那些算法.
+-   spring cloud gateway 默认使用 redis 进行限流，笔者一般只是修改修改参数属于拿来即用，并没有去从头实现上述那些算法。
 
 ```xml
 <dependency>
@@ -294,19 +292,19 @@ spring:
     gateway:
       routes:
         - id: requestratelimiter_route
-
+          
           uri: lb://pigx-upms
           order: 10000
           predicates:
             - Path=/admin/**
-
+          
           filters:
             - name: RequestRateLimiter
-
+              
               args:
                 redis-rate-limiter.replenishRate: 1 # 令牌桶的容积
                 redis-rate-limiter.burstCapacity: 3 # 流速 每秒
-                key-resolver: "#{@remoteAddrKeyResolver}" #SPEL表达式去的对应的bean
+                key-resolver: '#{@remoteAddrKeyResolver}' #SPEL表达式去的对应的bean
 
             - StripPrefix=1
 ```
@@ -320,7 +318,7 @@ KeyResolver remoteAddrKeyResolver() {
 
 ### sentinel
 
-- 通过配置来控制每个 url 的流量
+-   通过配置来控制每个 url 的流量
 
 ```xml
 <dependency>
@@ -349,7 +347,7 @@ spring:
             namespace: xxxxxxxx
 ```
 
-- 配置内容在 nacos 上进行编辑
+-   配置内容在 nacos 上进行编辑
 
 ```json
 [
@@ -365,14 +363,14 @@ spring:
 ]
 ```
 
-- resource：资源名，即限流规则的作用对象。
-- limitApp：流控针对的调用来源，若为 default 则不区分调用来源。
-- grade：限流阈值类型，QPS 或线程数模式，0 代表根据并发数量来限流，1 代表根据 QPS 来进行流量控制。
-- count：限流阈值
-- strategy：判断的根据是资源自身，还是根据其它关联资源 (refResource)，还是根据链路入口
-- controlBehavior：流控效果（直接拒绝 / 排队等待 / 慢启动模式）
-- clusterMode：是否为集群模式
+-   resource：资源名，即限流规则的作用对象。
+-   limitApp：流控针对的调用来源，若为 default 则不区分调用来源。
+-   grade：限流阈值类型，QPS 或线程数模式，0 代表根据并发数量来限流，1 代表根据 QPS 来进行流量控制。
+-   count：限流阈值
+-   strategy：判断的根据是资源自身，还是根据其它关联资源 (refResource)，还是根据链路入口
+-   controlBehavior：流控效果（直接拒绝 / 排队等待 / 慢启动模式）
+-   clusterMode：是否为集群模式
 
 ### 总结
 
-> sentinel 和 spring cloud gateway 两个框架都是很好的限流框架, 但是在我使用中还没有将[spring-cloud-alibaba](https://github.com/alibaba/spring-cloud-alibaba)接入到项目中进行使用, 所以我会选择**spring cloud gateway**, 当接入完整的或者接入 Nacos 项目使用 setinel 会有更加好的体验.
+> sentinel 和 spring cloud gateway 两个框架都是很好的限流框架， 但是在我使用中还没有将[spring-cloud-alibaba](https://github.com/alibaba/spring-cloud-alibaba)接入到项目中进行使用， 所以我会选择**spring cloud gateway**， 当接入完整的或者接入 Nacos 项目使用 setinel 会有更加好的体验.
